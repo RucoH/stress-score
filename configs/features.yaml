@@ -1,0 +1,27 @@
+fs_hz: 4                        # senkron çıktılar 4 Hz
+required:                       # pencerede en az bunlar olmalı
+  need_eda: true
+  need_temp: true
+  need_ppg_or_hr: true
+
+ppg:
+  use_hr_if_available: true
+  peak_prominence: 0.01         # 4 Hz BVP için makul başlangıç
+  min_hr_bpm: 40
+  max_hr_bpm: 180
+
+eda:
+  scr_prominence: 0.02          # SCR tepe algılama için
+  min_distance_sec: 1.0
+  slope_poly_degree: 1          # trend için (lineer)
+
+temp:
+  slope_poly_degree: 1
+
+acc:
+  movement_g: 1.4               # acc_mag > 1.4g ise hareket kabul (QA için)
+
+io:
+  windows_index: "data/interim/windows_index.csv"
+  sync_dir: "data/interim/sync"
+  out_parquet: "data/processed/features.parquet"

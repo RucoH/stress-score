@@ -1,0 +1,23 @@
+target_fs_hz: 4                    # ortak ızgara
+window_sec: 60                     # pencere
+hop_sec: 30                        # %50 bindirme
+
+required_signals: ["bvp|hr", "eda", "temp"]   # pencerede en az bunlar bulunmalı (bvp|hr: biri yeter)
+column_hints:                       # dosya içi kolon adları için ipuçları (case-insensitive)
+  time:  ["timestamp","time","t","unix_time","ts"]
+  bvp:   ["bvp","blood_volume_pulse","ppg"]
+  eda:   ["eda","gsr"]
+  temp:  ["temp","temperature"]
+  hr:    ["hr","heart_rate"]
+  accx:  ["accx","x","acc_x"]
+  accy:  ["accy","y","acc_y"]
+  accz:  ["accz","z","acc_z"]
+
+filters:
+  bvp_bandpass_hz: [0.5, 8.0]      # basit Butterworth önerisi; ham yazılımda moving-avg ile yumuşatacağız
+  eda_lowpass_hz: 1.0              # tonik bileşeni tutmak için
+  acc_clip_g: 8                    # aşırı değerleri kırp (opsiyonel)
+
+io_layout:
+  sync_dir: "data/interim/sync"    # 4 Hz senkronize çıktı (kanal başına parquet)
+  windows_index: "data/interim/windows_index.csv"
