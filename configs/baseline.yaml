@@ -1,0 +1,20 @@
+# Kişi-özel baseline çıkarımı
+proxy:
+  # düşük stres proxy = rank(hr_mean) + rank(scr_count + scr_amp_sum)
+  hr_weight: 0.6
+  scr_weight: 0.4
+  quantile: 0.35
+features_keep:          # baseline mean/std tutulacak alanlar
+  - hr_mean
+  - sdnn
+  - rmssd
+  - pnn50
+  - scl_median
+  - scl_slope
+  - scr_count
+  - scr_amp_sum
+  - temp_mean
+  - temp_slope
+io:
+  features_parquet: "data/processed/features.parquet"
+  out_parquet: "data/interim/baseline_stats.parquet"

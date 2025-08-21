@@ -1,0 +1,64 @@
+meta:
+  name: "stress_score_v0.1"
+  description: "PPG/BVP, EDA, HR, Temp ile 0–100 arası stres skoru"
+  created_by: "alperen"
+  version: "0.1"
+
+windowing:
+  window_sec: 60
+  hop_sec: 30
+  target_fs_hz: 4
+
+normalization:
+  strategy: "per_subject_baseline_z"
+  clip_z: 3.0
+
+logistic_transform:
+  a: 0.45   # 0.6 → 0.45  (s-eğrisini yumuşat, yüksek skoru geriye çek)
+  b: 0.0
+  
+features:
+  ppg_hr:
+    weight: 0.35
+    direction: "positive"
+    fields: ["hr_mean","sdnn","rmssd","pnn50"]
+  eda:
+    weight: 0.35
+    direction: "positive"
+    fields: ["scl_median","scl_slope","scr_count","scr_amp_sum"]
+  temp:
+    weight: 0.30
+    direction: "positive"
+    fields: ["temp_mean","temp_slope"]
+
+combine:
+  method: "weighted_mean"
+  calibration: "none"   # (ileride isotonic/Platt ekleyebiliriz)
+
+overrides:
+  fever:
+    high_temp_floor_c: 39.0
+    high_temp_floor_score: 85
+    add_in_range_c: [38.0, 38.9]
+    add_in_range_score: 20
+    low_temp_flag_c: 35.0
+    low_temp_add_score: 15
+  heart_rate:
+    high_bpm: 150
+    low_bpm: 40
+    add_score: 5
+  quality:
+    artifact_ratio_warn: 1.01   # pratikte kapalı
+
+bands:
+  calm:     [0, 19]
+  low:      [20, 39]
+  elevated: [40, 59]
+  high:     [60, 79]
+  critical: [80, 100]
+
+outputs:
+  - "stress_score"
+  - "band"
+  - "confidence"
+  - "reasons"

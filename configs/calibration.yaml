@@ -1,0 +1,14 @@
+method: percentile_map
+# Hedef eşleştirme: "bu yüzdelikteki puan şu değere çekilsin"
+# (Monoton, parça-doğrusal bir eğri oluşturacağız.)
+knots:
+  #   percentile  target_score
+  - [0,   10]
+  - [10,  25]
+  - [25,  40]
+  - [50,  55]
+  - [75,  70]
+  - [90,  85]
+  - [100, 100]
+in_path:  "data/processed/scores_v01.parquet"
+out_path: "data/processed/scores_v02_calibrated.parquet"
