@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stresscore"
+version = "0.1.0"
+description = "Stress scoring pipeline (WESAD/E4) with features, overrides and calibration"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "numpy",
+  "pandas",
+  "pyarrow",
+  "scipy",
+  "matplotlib",
+  "scikit-learn",
+  "joblib",
+  "PyYAML"
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["stresscore*"]
+
+[project.scripts]
+stresscore = "stresscore.cli:main"

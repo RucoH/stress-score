@@ -37,18 +37,19 @@ combine:
 
 overrides:
   fever:
-    high_temp_floor_c: 39.0
-    high_temp_floor_score: 85
-    add_in_range_c: [38.0, 38.9]
-    add_in_range_score: 20
-    low_temp_flag_c: 35.0
-    low_temp_add_score: 15
+    warn_temp_c: 38.0
+    high_temp_c: 39.5
+    add_score_warn: 10
+    add_score_high: 25
+    set_confidence: "high"
   heart_rate:
     high_bpm: 150
     low_bpm: 40
     add_score: 5
+    set_confidence: "med"
   quality:
-    artifact_ratio_warn: 1.01   # pratikte kapalı
+    artifact_ratio_warn: 1.01   # 0–1 aralığında; 1.01 => pratikte devre dışı
+    set_confidence: "med"       # (varsa) low yerine med işaretle
 
 bands:
   calm:     [0, 19]

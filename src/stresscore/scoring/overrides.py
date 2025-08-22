@@ -1,56 +1,64 @@
 # src/stresscore/scoring/overrides.py
-from typing import Dict, List, Tuple
+import math
 
-def apply_overrides(score: float,
-                    temp_c: float | None,
-                    hr_bpm: float | None,
-                    artifact_ratio: float | None,
-                    cfg: Dict) -> Tuple[float, str, List[str]]:
-    """
-    Model çıktısı 'score'u kural tabanlı güvenlik korumaları ile ayarlar.
-    Döndürür: (yeni_skor, confidence, reasons_list)
-    """
-    reasons: List[str] = []
-    conf = "high"
-    ov = cfg.get("overrides", {})
+def _get(d, key, default=None):
+    return (d or {}).get(key, default)
 
-    # Ateş/sıcaklık
-    fv = ov.get("fever", {})
-    if temp_c is not None:
-        high_c = float(fv.get("high_temp_floor_c", 39.0))
-        high_floor = float(fv.get("high_temp_floor_score", 85))
-        if temp_c >= high_c:
-            score = max(score, high_floor)
+def apply_overrides(score, temp_c=None, hr_bpm=None, qa_artifact_ratio=None, spec=None):
+    """
+    Basit kural seti:
+      - Ateş (fever): 38.0+ uyarı, 39.5+ yüksek → skora ekleme + güven = high
+      - Kalp hızı (HR): aralık dışı → skora küçük ekleme + güven = med
+      - Kalite (QA): artifact_ratio_warn eşik üstü → skoru değiştirme, güven = med (low'a düşürme!)
+    Döndürür: (adjusted_score, confidence, reasons[])
+    """
+    s = float(score)
+    conf = "med"     # <--- varsayılanı 'med' yaptık
+    reasons = []
+
+    spec = spec or {}
+    ov = spec.get("overrides", {}) if isinstance(spec, dict) else {}
+
+    # --- FEVER ---
+    fever = _get(ov, "fever", {})
+    t_warn = float(_get(fever, "warn_temp_c", float("inf")))
+    t_high = float(_get(fever, "high_temp_c", float("inf")))
+    add_warn = float(_get(fever, "add_score_warn", 0.0))
+    add_high = float(_get(fever, "add_score_high", 0.0))
+    conf_fever = _get(fever, "set_confidence", "high")
+
+    if temp_c is not None and not (isinstance(temp_c, float) and math.isnan(temp_c)):
+        if temp_c >= t_high:
+            s = min(100.0, s + add_high)
+            conf = conf_fever
             reasons.append("fever_high")
-            conf = "med"
-        rng = fv.get("add_in_range_c", [38.0, 38.9])
-        if isinstance(rng, (list, tuple)) and len(rng) == 2:
-            lo, hi = float(rng[0]), float(rng[1])
-            if lo <= temp_c <= hi:
-                add = float(fv.get("add_in_range_score", 20))
-                score = min(100.0, score + add)
-                reasons.append("fever_moderate")
-                conf = "med"
-        low_c = float(fv.get("low_temp_flag_c", 35.0))
-        if temp_c <= low_c:
-            score = min(100.0, score + float(fv.get("low_temp_add_score", 15)))
-            reasons.append("temp_low_flag")
-            conf = "low"
+        elif temp_c >= t_warn:
+            s = min(100.0, s + add_warn)
+            conf = conf_fever
+            reasons.append("fever_warn")
 
-    # Kalp atım hızı
-    hr_cfg = ov.get("heart_rate", {})
-    if hr_bpm is not None:
-        if (hr_bpm >= float(hr_cfg.get("high_bpm", 120))) or (hr_bpm <= float(hr_cfg.get("low_bpm", 45))):
-            score = min(100.0, score + float(hr_cfg.get("add_score", 15)))
+    # --- HEART RATE ---
+    hr = _get(ov, "heart_rate", {})
+    hi = float(_get(hr, "high_bpm", float("inf")))
+    lo = float(_get(hr, "low_bpm", float("-inf")))
+    add_hr = float(_get(hr, "add_score", 0.0))
+    conf_hr = _get(hr, "set_confidence", "med")
+
+    if hr_bpm is not None and not (isinstance(hr_bpm, float) and math.isnan(hr_bpm)):
+        if hr_bpm >= hi or hr_bpm <= lo:
+            s = min(100.0, s + add_hr)
+            conf = conf_hr
             reasons.append("hr_out_of_range")
-            conf = "med"
 
-    # Veri kalitesi (ACC)
-    q = ov.get("quality", {})
-    if artifact_ratio is not None and artifact_ratio >= float(q.get("artifact_ratio_warn", 0.25)):
-        reasons.append("low_quality")
-        conf = "low"
+    # --- QUALITY (QA) ---
+    # Not: Burada asla 'low' a düşürmüyoruz; med/higher kalıyor.
+    qual = _get(ov, "quality", {})
+    qa_thr = float(_get(qual, "artifact_ratio_warn", 1.01))  # 1.01 => pratikte kapalı
+    conf_q = _get(qual, "set_confidence", "med")
 
-    return float(score), conf, reasons
+    if qa_artifact_ratio is not None and not (isinstance(qa_artifact_ratio, float) and math.isnan(qa_artifact_ratio)):
+        if qa_artifact_ratio >= qa_thr:
+            conf = conf_q
+            reasons.append("qa_warn")
 
-__all__ = ["apply_overrides"]
+    return s, conf, reasons

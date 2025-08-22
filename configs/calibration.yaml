@@ -1,8 +1,5 @@
-method: percentile_map
-# Hedef eşleştirme: "bu yüzdelikteki puan şu değere çekilsin"
-# (Monoton, parça-doğrusal bir eğri oluşturacağız.)
+method: auto   # 'auto' → varsa models/isotonic_v1.joblib kullan; yoksa percentile_map
 knots:
-  #   percentile  target_score
   - [0,   10]
   - [10,  25]
   - [25,  40]

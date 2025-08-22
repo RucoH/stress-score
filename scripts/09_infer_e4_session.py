@@ -1,4 +1,4 @@
-# scripts/09_infer_e4_session.py
+# scripts/09_infer_e4_session.py  (v2.2 — overrides + isotonic/percentile auto-calibration)
 import sys, argparse, math
 from pathlib import Path
 import numpy as np
@@ -16,6 +16,7 @@ from stresscore.preprocess.make_windows import make_window_index
 from stresscore.features.assemble import compute_window_features
 from stresscore.scoring.logistic import clipped_logistic
 from stresscore.scoring.bands import to_band
+from stresscore.scoring.overrides import apply_overrides   # <-- YENİ
 
 # config paths
 CFG_PREP   = ROOT / "configs" / "preprocess.yaml"
@@ -23,6 +24,7 @@ CFG_FEATS  = ROOT / "configs" / "features.yaml"
 CFG_BASE   = ROOT / "configs" / "baseline.yaml"
 CFG_SCORE  = ROOT / "configs" / "score_spec.yaml"
 CFG_CALIB  = ROOT / "configs" / "calibration.yaml"
+MODEL_ISO  = ROOT / "models" / "isotonic_v1.joblib"
 
 def load_yaml(p: Path):
     import yaml
@@ -31,13 +33,13 @@ def load_yaml(p: Path):
 
 def parse_args():
     ap = argparse.ArgumentParser(description="Infer stress score from a new Empatica E4 folder")
-    ap.add_argument("--input", required=True, help="E4 klasörü (içinde BVP.csv, EDA.csv, TEMP.csv, HR.csv, ACC.csv)")
+    ap.add_argument("--input", required=True, help="E4 klasörü (BVP.csv, EDA.csv, TEMP.csv, HR.csv, ACC.csv)")
     ap.add_argument("--subject", default="NEW", help="subject_id etiketi (ör. S99)")
-    ap.add_argument("--source",  default="e4infer", help="source etiketi (örn. e4infer)")
+    ap.add_argument("--source",  default="e4infer", help="source etiketi")
     ap.add_argument("--outdir",  default="data/processed/infer", help="çıktı kök klasörü")
     return ap.parse_args()
 
-# ---- baseline helper (tek subject için) ----
+# ---- helpers ----
 def _rank01(s: pd.Series) -> pd.Series:
     return s.rank(method="average", pct=True)
 
@@ -47,7 +49,6 @@ def _z(x, mu, sd):
     return (x - mu) / sd
 
 def _compute_baseline_stats(df_feats: pd.DataFrame, base_cfg: dict) -> dict:
-    # proxy = 0.6*rank(hr_mean) + 0.4*rank(scr_count + scr_amp_sum)
     hrw = float(base_cfg["proxy"]["hr_weight"])
     scw = float(base_cfg["proxy"]["scr_weight"])
     q   = float(base_cfg["proxy"]["quantile"])
@@ -68,7 +69,6 @@ def _compute_baseline_stats(df_feats: pd.DataFrame, base_cfg: dict) -> dict:
         stats[f"{col}__sd"] = sd if (sd and sd>0) else 1e-6
     return stats
 
-# ---- scoring helpers (aynı mantık 06'da olduğu gibi) ----
 def _comp_ppg_hr(row, base_row):
     vals=[]
     for col,sgn in [("hr_mean",+1.0),("rmssd",-1.0),("sdnn",-1.0),("pnn50",-1.0)]:
@@ -97,21 +97,72 @@ def _to_float(v):
         try: return float(np.asarray(v, dtype="float64").ravel()[0])
         except Exception: return float("nan")
 
-# ---- E4 okuma ----
 def load_e4_folder(input_dir: Path) -> dict:
     """Return dict: {'bvp': df, 'eda': df, 'temp': df, 'hr': df, 'acc': df} (DatetimeIndex)"""
     input_dir = Path(input_dir)
     files = list(input_dir.glob("*.csv"))
     if not files:
+        files = list(input_dir.rglob("*.csv"))  # alt klasörleri de tara
+    if not files:
         raise FileNotFoundError(f"E4 klasöründe CSV bulunamadı: {input_dir}")
+
     sigs = {}
     for p in files:
         key = e4_key_from_filename(p.name)
-        if key is None: 
+        if key is None:
             continue
         df, fs = load_empatica_e4(p, key)
-        sigs[key] = df  # index zaten zaman
+        sigs[key] = df
+    if not sigs:
+        raise FileNotFoundError(f"E4 CSV’leri bulunamadı (BVP/EDA/TEMP/HR/ACC yok): {input_dir}")
     return sigs
+
+# ---- calibration helpers ----
+def apply_calibration(df_s01: pd.DataFrame, score_cfg: dict, calib_cfg: dict) -> pd.DataFrame:
+    """
+    Auto calibration:
+      - If isotonic model exists: use it.
+      - If calibrated scores are (near) constant: fallback to percentile_map.
+      - Else if no model: percentile_map.
+    """
+    method = str(calib_cfg.get("method","auto")).lower()
+
+    def _percentile_map(df):
+        knots = calib_cfg.get("knots", [[0,10],[10,25],[25,40],[50,55],[75,70],[90,85],[100,100]])
+        P, T = zip(*knots); P=list(P); T=list(T)
+        x = df["score"].values.astype(float)
+
+        xp = np.percentile(x, P).astype(float)
+        if np.allclose(xp, xp[0]):
+            base = x[0] if len(x) else 0.0
+            xp = np.array([base-1e-6, base, base+1e-6, base+2e-6, base+3e-6, base+4e-6, base+5e-6], dtype=float)
+        fp = np.array(T, dtype=float)
+        xp[0] = min(xp[0], x.min()); xp[-1] = max(xp[-1], x.max())
+        df["score_cal"] = np.clip(np.interp(x, xp, fp), 0, 100)
+        return df
+
+    used = "none"
+    iso_ok = False
+    if method in ("auto","isotonic","isotonic_if_available") and MODEL_ISO.exists():
+        try:
+            import joblib
+            iso = joblib.load(MODEL_ISO)
+            prob = iso.predict(df_s01["score"].values.astype(float))  # [0,1]
+            df_s01["score_cal"] = np.clip(prob * 100.0, 0, 100)
+            used = "isotonic"
+            iso_ok = True
+        except Exception:
+            iso_ok = False
+
+    if not iso_ok:
+        df_s01 = _percentile_map(df_s01); used = "percentile"
+
+    if np.nanstd(df_s01["score_cal"].values) < 1e-3:
+        df_s01 = _percentile_map(df_s01); used = "percentile_fallback"
+
+    df_s01["band_cal"] = df_s01["score_cal"].apply(lambda s: to_band(float(s), score_cfg["bands"]))
+    df_s01.attrs["calibration_used"] = used
+    return df_s01
 
 def main():
     args = parse_args()
@@ -132,13 +183,11 @@ def main():
     fs_target = float(prep["target_fs_hz"])
     wsec = int(prep["window_sec"]); hsec = int(prep["hop_sec"])
 
-    # 1) Read E4 & resample to 4 Hz
+    # 1) Read E4 & resample
     sigs = load_e4_folder(inp)
-    resampled = {}
-    for k, df in sigs.items():
-        resampled[k] = to_4hz(df, fs_target)
+    resampled = {k: to_4hz(df, fs_target) for k, df in sigs.items()}
 
-    # 2) Window index (kesişim)
+    # 2) Window index
     spans = []
     need_ppg_or_hr = (("bvp" in resampled) or ("hr" in resampled))
     need_eda = "eda" in resampled
@@ -155,7 +204,7 @@ def main():
     if widx.empty:
         raise RuntimeError("Pencere üretilemedi (ortak aralık yok).")
 
-    # 3) Feature extraction per window
+    # 3) Features
     rows=[]
     for _,row in widx.iterrows():
         t0=row["t_start"]; t1=row["t_end"]
@@ -167,7 +216,6 @@ def main():
                     win_data[k]=sl.iloc[:,0]
                 else:
                     win_data[k]=sl
-        # required in window
         if ("eda" not in win_data) or ("temp" not in win_data) or (("bvp" not in win_data) and ("hr" not in win_data)):
             continue
         feats = compute_window_features(win_data, fs_target, feats_cfg)
@@ -181,11 +229,10 @@ def main():
     df_feats = pd.DataFrame(rows)
     df_feats.to_parquet(outdir / "features.parquet", index=False)
 
-    # 4) Baseline (tek subject için μ/σ)
+    # 4) Baseline (tek subject)
     base_stats = _compute_baseline_stats(df_feats, base_cfg)
 
-    # 5) Scoring v0.1
-    # logistic params (support both keys)
+    # 5) Scoring v0.1 (ham + overrides)
     log_cfg = score_cfg.get("logistic_transform") or score_cfg.get("logistic") or {}
     log_a = float(log_cfg.get("a", 0.9)); log_b = float(log_cfg.get("b", 0.0))
     clip_z = float(score_cfg.get("normalization",{}).get("clip_z",3.0))
@@ -207,23 +254,30 @@ def main():
         if pd.notna(z_temp): comp_scores["temp"]   = clipped_logistic(_to_float(z_temp), log_a, log_b, clip_z)
         if not comp_scores:  continue
 
-        # normalize weights over present comps
         used_w = {k: weights[k] for k in comp_scores.keys()}
         tw = sum(used_w.values()) or 1.0
         s_raw = sum(comp_scores[k]*used_w[k] for k in comp_scores.keys())/tw
 
-        # (Basit) overrides: kalite/ateş/HR istersen 06'daki apply_overrides eklenebilir.
-        s = s_raw
-        band = to_band(s, score_cfg["bands"])
+        # --- overrides (fever/HR/kalite) ---
+        temp_c = float(r["temp_mean"]) if pd.notna(r.get("temp_mean")) else None
+        hr_bpm = float(r["hr_mean"])   if pd.notna(r.get("hr_mean")) else None
+        qa     = float(r["qa_artifact_ratio"]) if pd.notna(r.get("qa_artifact_ratio")) else None
+        s_adj, conf, reasons = apply_overrides(float(s_raw), temp_c, hr_bpm, qa, score_cfg)
 
         score_rows.append({
             "source": source, "subject_id": subj,
             "t_start": r["t_start"], "t_end": r["t_end"],
-            "score": round(float(s),3), "band": band,
+            "score_raw": round(float(s_raw),3),
+            "score":     round(float(s_adj),3),                 # <-- overrides sonrası skor
+            "band": to_band(float(s_adj), score_cfg["bands"]), # band raw değil, adjusted üzerinden
+            "confidence": conf,
+            "reasons": ";".join(reasons) if reasons else "",
             "ppg_hr_score": comp_scores.get("ppg_hr"),
             "eda_score": comp_scores.get("eda"),
             "temp_score": comp_scores.get("temp"),
-            "hr_mean": r.get("hr_mean"), "temp_mean": r.get("temp_mean"),
+            "qa_artifact_ratio": r.get("qa_artifact_ratio"),
+            "hr_mean": r.get("hr_mean"),
+            "temp_mean": r.get("temp_mean"),
         })
 
     if not score_rows:
@@ -232,19 +286,8 @@ def main():
     df_s01 = pd.DataFrame(score_rows)
     df_s01.to_parquet(outdir / "scores_v01.parquet", index=False)
 
-    # 6) Distributional calibration (percentile → target)
-    knots = calib_cfg.get("knots", [[0,10],[10,25],[25,40],[50,55],[75,70],[90,85],[100,100]])
-    P, T = zip(*knots); P=list(P); T=list(T)
-    xp = np.percentile(df_s01["score"].values, P).astype(float)
-    fp = np.array(T, dtype=float)
-    xp[0] = min(xp[0], df_s01["score"].min()); xp[-1] = max(xp[-1], df_s01["score"].max())
-    df_s01["score_cal"] = np.clip(np.interp(df_s01["score"].values, xp, fp), 0, 100)
-
-    # bands (from score spec)
-    def _band_cal(s):
-        return to_band(float(s), score_cfg["bands"])
-    df_s01["band_cal"] = df_s01["score_cal"].apply(_band_cal)
-
+    # 6) Calibration (auto + fallback)
+    df_s01 = apply_calibration(df_s01, score_cfg, calib_cfg)
     out_cal = outdir / "scores_v02_calibrated.parquet"
     df_s01.to_parquet(out_cal, index=False)
 
@@ -262,7 +305,7 @@ def main():
     print(f"[ok] İnferans tamam: {outdir.as_posix()}")
     print(" - features.parquet")
     print(" - scores_v01.parquet")
-    print(" - scores_v02_calibrated.parquet")
+    print(" - scores_v02_calibrated.parquet  (auto-calibrated)")
     print(" - _band_counts.csv, _scores_by_subject.csv")
     print("\n[band_cal dağılımı]")
     print(bc)

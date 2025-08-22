@@ -1,0 +1,56 @@
+Metadata-Version: 2.4
+Name: stresscore
+Version: 0.1.0
+Summary: Stress scoring pipeline (WESAD/E4) with features, overrides and calibration
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: numpy
+Requires-Dist: pandas
+Requires-Dist: pyarrow
+Requires-Dist: scipy
+Requires-Dist: matplotlib
+Requires-Dist: scikit-learn
+Requires-Dist: joblib
+Requires-Dist: PyYAML
+Dynamic: license-file
+
+# stress-score
+Cache temizleme:
+
+Remove-Item -Recurse -Force .\src\stresscore\__pycache\* -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force .\src\stresscore\scoring\__pycache\* -ErrorAction SilentlyContinue
+
+# paketler
+pip install numpy pandas scipy pyarrow pyyaml kaggle
+
+A) Veri İndir (opsiyonel)
+
+Kaggle API ile:
+
+kaggle.json → C:\Users\<kullanici>\.kaggle\kaggle.json
+
+python scripts/01_fetch_kaggle.py
+
+B) Envanter
+python scripts/02_inventory_raw.py --data-root ./data --save data/interim/_inventory.csv
+
+C) Senkronizasyon & Pencereleme (4 Hz, 60 s / 30 s)
+python scripts/03_sync_resample.py
+
+D) Özellik Çıkarımı
+python scripts/04_extract_features.py
+
+E) Kişi-Bazlı Baseline
+python scripts/05_build_baseline.py
+
+F) Skorlama v0.1 (0–100)
+python scripts/06_score_from_features.py
+
+G) Hızlı Rapor
+# v01 için
+python scripts/07_quick_report.py
+# v02 (kalibre) için:
+python scripts/07_quick_report.py --path data/processed/scores_v02_calibrated.parquet
+H) Dağılımsal Kalibrasyon v0.2
+python scripts/08_calibrate_distributional.py
