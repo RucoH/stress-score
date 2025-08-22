@@ -113,7 +113,7 @@ data/processed/*.zip
 
 ## 📄 License
 
-Distributed under the **MIT License**.
+Distributed under the **[MIT License](LICENSE)**.
 
 ---
 
