@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Oturumlar</h1>
+{% if sessions|length == 0 %}
+  <p>Henüz işlenmiş oturum yok. Önce <code>/score-e4</code> ya da <code>/cohort-pipeline</code> çalıştır.</p>
+{% else %}
+<table class="tbl">
+  <thead><tr><th>source</th><th>subject</th><th>pencere</th><th>tarih aralığı</th><th></th></tr></thead>
+  <tbody>
+  {% for s in sessions %}
+    <tr>
+      <td>{{ s.source }}</td>
+      <td>{{ s.subject }}</td>
+      <td>{{ s.n }}</td>
+      <td class="muted small">{{ s.range }}</td>
+      <td><a class="btn" href="/ui/session?source={{ s.source }}&subject={{ s.subject }}">Aç</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

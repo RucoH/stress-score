@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Oturum · {{ source }} / {{ subject }}</h1>
+<p class="muted small">{{ outdir_rel }}</p>
+
+<div class="grid">
+  <section>
+    <h3>Özet</h3>
+    <ul class="plain">
+      <li><b>Pencere:</b> {{ n_windows }}</li>
+      <li><b>Zaman:</b> {{ time_range[0] }} → {{ time_range[1] }}</li>
+    </ul>
+
+    <h3>Band dağılımı</h3>
+    <table class="tbl tight">
+      <thead><tr><th>band</th><th>count</th></tr></thead>
+      <tbody>
+      {% for k,v in band_counts.items() %}
+        <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="actions">
+      <a class="btn" href="/download?relpath={{ scores_rel }}" download>scores.parquet</a>
+      {% if band_csv_rel %}<a class="btn" href="/download?relpath={{ band_csv_rel }}" download>band_counts.csv</a>{% endif %}
+      {% if summary_json_rel %}<a class="btn" href="/download?relpath={{ summary_json_rel }}" download>summary.json</a>{% endif %}
+    </div>
+  </section>
+
+  <section>
+    <h3>Zaman çizgisi</h3>
+    {% if timeline_rel %}
+      <img class="plot" src="/download?relpath={{ timeline_rel }}" alt="timeline">
+    {% else %}
+      <p>PNG bulunamadı. Rapor için <code>report=true</code> ile skorla.</p>
+    {% endif %}
+  </section>
+</div>
+
+<h3>Top segmentler</h3>
+{% if top_segments|length == 0 %}
+  <p>Veri yok.</p>
+{% else %}
+<table class="tbl tight">
+  <thead>
+    <tr><th>t_start</th><th>t_end</th><th>score</th><th>band</th><th>reasons</th></tr>
+  </thead>
+  <tbody>
+  {% for r in top_segments %}
+    <tr>
+      <td class="small">{{ r.t_start }}</td>
+      <td class="small">{{ r.t_end }}</td>
+      <td>{% if r.score is not none %}{{ '%.1f'|format(r.score) }}{% else %}-{% endif %}</td>
+      <td>{{ r.band }}</td>
+      <td class="small">{{ r.reasons }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}
