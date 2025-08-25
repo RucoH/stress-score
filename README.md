@@ -39,7 +39,7 @@ python -m uvicorn api.main:app --reload --host 127.0.0.1 --port 8000
 
 **Batch (WESAD root):**
 ```bash
-python scripts/19_pipeline_cohort.py   --root "D:\data\wesad\WESAD" --source e4api --report --zip --subject-parent-depth 1
+python scripts/19_pipeline_cohort.py   --root "data\wesad\WESAD" --source e4api --report --zip --subject-parent-depth 1
 ```
 
 ---
