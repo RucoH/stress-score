@@ -27,7 +27,7 @@ pip install numpy pandas scipy pyarrow pyyaml matplotlib fastapi uvicorn jinja2 
 pip install -e .   # optional, editable install
 
 # 2) Score a single E4 session (CLI)
-python -m stresscore.cli score   --input "D:\data\wesad\WESAD\S13\S13_E4_Data"   --subject S13 --source e4api --report
+python -m stresscore.cli score   --input "data\wesad\WESAD\S13\S13_E4_Data"   --subject S13 --source e4api --report
 # Outputs → data/processed/infer/e4api_S13/
 #   - scores_v02_calibrated.parquet, _session_timeline.png, _top_segments.csv, ...
 
@@ -85,19 +85,6 @@ python scripts/10_session_report.py --path data/processed/infer/e4infer_S99/scor
 # Cohort summary + Excel
 python scripts/17_cohort_summary.py
 python scripts/18_export_excel.py   # → data/processed/cohort/summary.xlsx
-```
-
----
-
-## 📦 Keep the Repo Small
-
-Keep heavy data **outside** the repo. Example `.gitignore` snippet:
-```gitignore
-data/raw/**
-data/processed/infer/**
-data/processed/cohort/**
-data/processed/*.zip
-!data/interim/baseline_stats.parquet
 ```
 
 ---
